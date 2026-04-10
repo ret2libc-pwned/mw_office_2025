@@ -191,8 +191,8 @@ warnings.simplefilter(action='ignore', category=FutureWarning)
 warnings.filterwarnings("ignore", message="Level value of 1 is too high: all coefficients will experience boundary effects.") # This occurs for PyWT at times 
 
 model_name = 'cv_personalized_participant_%s_model_%s_as_%s_class_model_%s_and_%s.csv'
-reults_path = './ml_results/%s/' % sensors
-base_path = './dataset/'
+reults_path = '../parsed/ml_results/%s/' % sensors
+base_path = '../raw/dataset/'
 
 EDA_SFREQ = 4
 BVP_SFREQ = 64
@@ -1011,7 +1011,7 @@ def handcrafted_features_extraction(participant_number=-1, eeg_samples=None, eda
 
 
 def get_data_participant_split_in_train_test(participant_number):
-    base_path = './dataset/'
+    base_path = '../raw/dataset/'
     participant_data = []
     feature_labels_to_use = None
 
