@@ -4,6 +4,7 @@ import sys
 import csv
 import time 
 import math
+import pickle
 import pytz
 import pywt
 import pathlib
@@ -34,6 +35,18 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, f1_score, classification_report, make_scorer
 
+
+SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
+DATA_DIR = SCRIPT_DIR.parent
+RAW_DATASET_DIR = (DATA_DIR / 'raw' / 'dataset').resolve()
+ML_RESULTS_ROOT = (DATA_DIR / 'parsed' / 'ml_results').resolve()
+STATS_RESULTS_ROOT = (DATA_DIR / 'parsed' / 'stats_results').resolve()
+CACHE_ROOT = (DATA_DIR / 'parsed' / 'cache').resolve()
+DEFAULT_JOBS = int(os.environ.get('MW_OFFICE_JOBS', '1'))
+ONLY_PARSE = os.environ.get('MW_OFFICE_ONLY_PARSE', '0') == '1'
+ML_RESULTS_ROOT.mkdir(parents=True, exist_ok=True)
+STATS_RESULTS_ROOT.mkdir(parents=True, exist_ok=True)
+CACHE_ROOT.mkdir(parents=True, exist_ok=True)
 
 participants_wild_tasks_dir = [
     {   # Participant 01
@@ -191,8 +204,13 @@ warnings.simplefilter(action='ignore', category=FutureWarning)
 warnings.filterwarnings("ignore", message="Level value of 1 is too high: all coefficients will experience boundary effects.") # This occurs for PyWT at times 
 
 model_name = 'cv_generalized_loo_participant_%s_model_%s_as_%s_class_model_%s_and_%s.csv'
-reults_path = '../parsed/ml_results/%s/' % sensors
-base_path = '../raw/dataset/'
+reults_path = str((ML_RESULTS_ROOT / sensors).resolve()) + '/'
+pathlib.Path(reults_path).mkdir(parents=True, exist_ok=True)
+stats_results_path = str((STATS_RESULTS_ROOT / sensors).resolve()) + '/'
+pathlib.Path(stats_results_path).mkdir(parents=True, exist_ok=True)
+participant_cache_file = CACHE_ROOT / ('participant_data_%s_%s_%s_%s.pkl' % (sensors, classification_here, feature_reduction, with_activity_labels))
+use_cache = os.environ.get('MW_OFFICE_CACHE', '1') == '1'
+base_path = str(RAW_DATASET_DIR) + '/'
 
 EDA_SFREQ = 4
 BVP_SFREQ = 64
@@ -1011,7 +1029,7 @@ def handcrafted_features_extraction(participant_number=-1, eeg_samples=None, eda
 
 
 def get_data_all_participants_and_loo_participant():
-    base_path = '../raw/dataset/'
+    base_path = str(RAW_DATASET_DIR) + '/'
     participant_data = []
     feature_labels_to_use = None
 
@@ -2127,7 +2145,24 @@ def get_data_all_participants_and_loo_participant():
     return participant_data, feature_labels_to_use
 
 
-participant_data, feature_labels_probably_to_use = get_data_all_participants_and_loo_participant()
+if use_cache and participant_cache_file.exists():
+    print('Loading cached participant data from %s' % participant_cache_file)
+    with open(participant_cache_file, 'rb') as cache_file:
+        participant_data, feature_labels_probably_to_use = pickle.load(cache_file)
+else:
+    participant_data, feature_labels_probably_to_use = get_data_all_participants_and_loo_participant()
+    if use_cache:
+        with open(participant_cache_file, 'wb') as cache_file:
+            pickle.dump((participant_data, feature_labels_probably_to_use), cache_file)
+        print('Stored participant data cache at %s' % participant_cache_file)
+
+if ONLY_PARSE:
+    if not participant_cache_file.exists():
+        with open(participant_cache_file, 'wb') as cache_file:
+            pickle.dump((participant_data, feature_labels_probably_to_use), cache_file)
+        print('Stored participant data cache at %s' % participant_cache_file)
+    print('MW_OFFICE_ONLY_PARSE=1 detected; exiting after caching participant features.')
+    sys.exit(0)
 
 if use_activity_labels:
     # Activity labels included here:    'Relaxation', 'LoadTask', 'Summary', 'Reading', 'Game'
@@ -2242,11 +2277,11 @@ for loo_participant in range(0,10):
         averaged_results_pearson = (np.sum(np.asarray([np.abs(arr) for arr in correlation_scores_pearson]), axis=0)) / len(correlation_scores_pearson)
         averaged_results_spearman = (np.sum(np.asarray([np.abs(arr) for arr in correlation_scores_spearman]), axis=0)) / len(correlation_scores_spearman)
 
-        np.savetxt(("./stats_results/correlation_results_pearson_on_%s_for_%s_classes_%s_and_%s.csv" % (sensors, classification_here, feature_reduction_str, with_activity_labels_str)), np.asarray(correlation_scores_pearson), delimiter=",")
-        np.savetxt(("./stats_results/correlation_results_spearman_on_%s_for_%s_classes_%s_and_%s.csv" % (sensors, classification_here, feature_reduction_str, with_activity_labels_str)), np.asarray(correlation_scores_spearman), delimiter=",")
+        np.savetxt((stats_results_path + "correlation_results_pearson_on_%s_for_%s_classes_%s_and_%s.csv" % (sensors, classification_here, feature_reduction_str, with_activity_labels_str)), np.asarray(correlation_scores_pearson), delimiter=",")
+        np.savetxt((stats_results_path + "correlation_results_spearman_on_%s_for_%s_classes_%s_and_%s.csv" % (sensors, classification_here, feature_reduction_str, with_activity_labels_str)), np.asarray(correlation_scores_spearman), delimiter=",")
 
-        np.savetxt(("./stats_results/averaged_correlation_results_pearson_on_%s_for_%s_classes_%s_and_%s.csv" % (sensors, classification_here, feature_reduction_str, with_activity_labels_str)), averaged_results_pearson, delimiter=",")
-        np.savetxt(("./stats_results/averaged_correlation_results_spearman_on_%s_for_%s_classes_%s_and_%s.csv" % (sensors, classification_here, feature_reduction_str, with_activity_labels_str)), averaged_results_spearman, delimiter=",")
+        np.savetxt((stats_results_path + "averaged_correlation_results_pearson_on_%s_for_%s_classes_%s_and_%s.csv" % (sensors, classification_here, feature_reduction_str, with_activity_labels_str)), averaged_results_pearson, delimiter=",")
+        np.savetxt((stats_results_path + "averaged_correlation_results_spearman_on_%s_for_%s_classes_%s_and_%s.csv" % (sensors, classification_here, feature_reduction_str, with_activity_labels_str)), averaged_results_spearman, delimiter=",")
 
     print('For this run started at %d its current ms time: %d' % (start_time, int(time.time())))
 
@@ -2267,7 +2302,7 @@ for loo_participant in range(0,10):
     print('Shape of all_labels: %s' % str(all_labels.shape))
 
     csv_results_header = ['Best_Params', 'Heldout_Test_F1_or_ACC', 'best_predictor_f1_score', 'y_test', 'best_predictor_predictions']
-    n_jobs = -1
+    n_jobs = DEFAULT_JOBS
     min_max_scaler = preprocessing.MinMaxScaler()
     standard_scaler = StandardScaler()
     standard_scaler.fit(X_train)
